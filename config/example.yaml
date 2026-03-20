@@ -1,0 +1,133 @@
+# mc-to-synq configuration
+# Copy this file and rename to mc-to-synq.yaml, then fill in your values.
+# All paths are relative to the directory where you run mc-to-synq.
+
+# ---------------------------------------------------------------------------
+# Monte Carlo (source)
+# ---------------------------------------------------------------------------
+monte_carlo:
+  # GraphQL API endpoint
+  api_url: "https://api.getmontecarlo.com/graphql"
+
+  # Auth: reads from ~/.mcd/profiles.ini by default.
+  # Override with MC_API_ID and MC_API_TOKEN env vars if preferred.
+  credentials_profile: "default"
+
+# ---------------------------------------------------------------------------
+# SYNQ (target)
+# ---------------------------------------------------------------------------
+synq:
+  # Base URL for all SYNQ API calls.
+  # Most environments use https://api.synq.io.
+  # If your corporate DNS cannot resolve api.synq.io, try https://developer.synq.io.
+  base_url: "https://api.synq.io"
+
+  # OAuth2 token endpoint (usually base_url + /oauth2/token)
+  oauth_url: "https://api.synq.io/oauth2/token"
+
+  # Auth: set SYNQ_CLIENT_ID and SYNQ_CLIENT_SECRET as env vars.
+  # Create credentials at: SYNQ Settings -> API -> Add client
+  # Required scopes: Edit SQL Tests, Edit Automatic Monitors, Edit Custom Monitors
+
+  # Your SYNQ integration UUID (visible in SYNQ Settings -> Integrations)
+  integration_id: "CHANGEME"
+
+# ---------------------------------------------------------------------------
+# Snowflake coordinates (used for OOTB monitor entity resolution)
+# ---------------------------------------------------------------------------
+snowflake:
+  account: "your_account.region.cloud"
+  database: "YOUR_DATABASE"
+  schema: "YOUR_SCHEMA"
+
+# ---------------------------------------------------------------------------
+# Entity filtering
+# ---------------------------------------------------------------------------
+# Controls which Monte Carlo monitors are selected for migration.
+# A monitor is included if ANY of its entities match these patterns.
+filters:
+  # Entity prefix patterns (case-insensitive).
+  # MC entity format: "database:schema.table_name"
+  # Example: to migrate everything in the BIZVIEWS schema:
+  entity_prefixes:
+    - "your_database:your_schema."
+
+  # Broad text patterns checked against SQL, names, descriptions.
+  # Used as a secondary filter when entity references are missing.
+  text_patterns:
+    - "your_schema"
+
+# ---------------------------------------------------------------------------
+# OOTB monitor generation
+# ---------------------------------------------------------------------------
+ootb:
+  # Timestamp column candidates for freshness/volume monitors.
+  # Checked in order -- first match wins per entity.
+  timestamp_columns:
+    - "DSS_LOAD_DATE"
+    - "LOAD_DATE"
+    - "DW_LOAD_DATE"
+    - "MODIFIED_AT"
+    - "UPDATED_AT"
+    - "CREATED_AT"
+
+  # Constraint types used for duplicate-key detection (priority order).
+  key_constraint_types:
+    - "TABLE_CONSTRAINT_TYPE_PRIMARY_KEY"
+    - "TABLE_CONSTRAINT_TYPE_UNIQUE"
+
+  # Entity types to include from SYNQ search results.
+  allowed_entity_types:
+    - "ENTITY_TYPE_SNOWFLAKE_TABLE"
+    - "ENTITY_TYPE_SNOWFLAKE_VIEW"
+    - "ENTITY_TYPE_SNOWFLAKE_DYNAMIC_TABLE"
+
+  # Monitor naming prefix (also used for bulk cleanup).
+  monitor_prefix: "bv_"
+
+  # Default severity and sensitivity.
+  severity: "SEVERITY_WARNING"
+  sensitivity: "SENSITIVITY_BALANCED"
+
+  # Default schedule: minutes since midnight UTC.
+  schedule_minutes_utc: 360  # 6:00 AM UTC
+
+# ---------------------------------------------------------------------------
+# SQL test migration
+# ---------------------------------------------------------------------------
+sql_tests:
+  # ID prefix for migrated tests (used for bulk cleanup).
+  id_prefix: "mc_migrated_"
+
+  # Default RRULE schedule for SQL tests.
+  default_schedule: "DTSTART:20260310T060000Z\nRRULE:FREQ=DAILY;BYHOUR=6;BYMINUTE=0;BYSECOND=0"
+
+  # Default severity for migrated SQL tests.
+  severity: "SEVERITY_ERROR"
+
+  # Skip monitors that are disabled in Monte Carlo.
+  skip_disabled: true
+
+  # Skip monitors whose SQL contains Jinja template variables.
+  skip_jinja_templates: true
+
+# ---------------------------------------------------------------------------
+# Network / TLS
+# ---------------------------------------------------------------------------
+network:
+  # Set to false to disable SSL certificate verification.
+  # Required in corporate environments with SSL-inspecting proxies.
+  verify_ssl: true
+
+  # Request timeout in seconds.
+  timeout: 30
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+output:
+  # Directory for generated files (reports, payloads, exports).
+  directory: "."
+
+  # Batch size for SYNQ API calls.
+  batch_size: 25
