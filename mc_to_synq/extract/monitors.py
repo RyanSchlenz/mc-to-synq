@@ -138,18 +138,26 @@ INTROSPECT_USER_DEFINED_V2 = """
 # Schema discovery
 # ---------------------------------------------------------------------------
 
-def _discover_sql_field(client: MonteCarloClient) -> str | None:
-    """Find the SQL field name on CustomRule (it varies across MC versions)."""
+def _discover_custom_rule_fields(client: MonteCarloClient) -> dict[str, Any]:
+    """Discover available fields on CustomRule type.
+
+    Returns dict with sql_field name and full field list, so we can
+    build queries using only fields that actually exist.
+    """
     result = client.query(INTROSPECT_CUSTOM_RULE)
     type_info = result.get("data", {}).get("__type")
     if not type_info:
-        return None
+        return {"sql_field": None, "fields": []}
 
-    field_names = [f["name"] for f in type_info.get("fields", [])]
+    fields = [f["name"] for f in (type_info.get("fields") or [])]
+
+    sql_field = None
     for candidate in ("customSql", "sql", "queryText", "customQuery", "query"):
-        if candidate in field_names:
-            return candidate
-    return None
+        if candidate in fields:
+            sql_field = candidate
+            break
+
+    return {"sql_field": sql_field, "fields": fields}
 
 
 def _discover_ud_type(client: MonteCarloClient) -> dict[str, Any]:
@@ -158,8 +166,8 @@ def _discover_ud_type(client: MonteCarloClient) -> dict[str, Any]:
     type_info = result.get("data", {}).get("__type", {})
     return {
         "kind": type_info.get("kind"),
-        "fields": [f["name"] for f in type_info.get("fields", [])],
-        "possible_types": [t["name"] for t in type_info.get("possibleTypes", [])],
+        "fields": [f["name"] for f in (type_info.get("fields") or [])],
+        "possible_types": [t["name"] for t in (type_info.get("possibleTypes") or [])],
     }
 
 
@@ -179,17 +187,22 @@ def extract_monitors(client: MonteCarloClient) -> tuple[list[dict], dict]:
         and connections maps uuid -> connection info.
     """
     console.print("\n[bold]Discovering MC GraphQL schema...[/bold]")
-    sql_field = _discover_sql_field(client)
+    cr_info = _discover_custom_rule_fields(client)
+    sql_field = cr_info["sql_field"]
+    cr_fields = cr_info["fields"]
     if sql_field:
         console.print(f"  SQL field on CustomRule: [cyan]{sql_field}[/cyan]")
     else:
         console.print("  [yellow]No SQL field found on CustomRule[/yellow]")
+    if cr_fields:
+        console.print(f"  CustomRule has {len(cr_fields)} fields")
 
     ud_info = _discover_ud_type(client)
     if ud_info["kind"]:
         console.print(
             f"  UserDefinedMonitorV2: {ud_info['kind']} "
-            f"({len(ud_info['possible_types'])} subtypes)"
+            f"({len(ud_info['possible_types'])} subtypes, "
+            f"{len(ud_info['fields'])} fields)"
         )
 
     monitors_by_uuid: dict[str, dict] = {}
@@ -208,7 +221,7 @@ def extract_monitors(client: MonteCarloClient) -> tuple[list[dict], dict]:
 
     # 2. Custom rules (primary source for SQL monitors)
     console.print("  Fetching getCustomRules...")
-    custom_rules = _fetch_custom_rules(client, sql_field)
+    custom_rules = _fetch_custom_rules(client, sql_field, cr_fields)
     console.print(
         f"  Found {len(custom_rules)} active custom rules "
         f"({sum(1 for r in custom_rules.values() if r.get('sql'))} with SQL)"
@@ -246,27 +259,56 @@ def extract_monitors(client: MonteCarloClient) -> tuple[list[dict], dict]:
 # ---------------------------------------------------------------------------
 
 def _fetch_custom_rules(
-    client: MonteCarloClient, sql_field: str | None
+    client: MonteCarloClient,
+    sql_field: str | None,
+    known_fields: list[str],
 ) -> dict[str, dict]:
-    """Fetch custom rules, building query dynamically based on discovered SQL field."""
+    """Fetch custom rules, building query from introspected fields only.
+
+    Only requests fields confirmed to exist on CustomRule, avoiding
+    400 errors from stale field names.
+    """
     rules: dict[str, dict] = {}
 
-    if sql_field:
+    # Build field list from what introspection confirmed exists
+    # Core fields we always want (if they exist)
+    wanted_scalars = [
+        "uuid", "creatorId", "createdTime", "description",
+        "isDeleted", "entities", "ruleType",
+    ]
+    # Object fields that need sub-selections
+    wanted_objects = {
+        "scheduleConfig": "{ intervalMinutes startTime }",
+        "alertCondition": "{ operator threshold }",
+    }
+
+    field_lines = []
+    for f in wanted_scalars:
+        if f in known_fields:
+            field_lines.append(f"                {f}")
+
+    if sql_field and sql_field in known_fields:
+        field_lines.append(f"                {sql_field}")
+
+    for f, sub in wanted_objects.items():
+        if f in known_fields:
+            field_lines.append(f"                {f} {sub}")
+
+    if not field_lines:
+        # Introspection returned nothing useful -- use hardcoded minimal
+        console.print("  [yellow]No introspected fields, using minimal query[/yellow]")
+        try:
+            result = client.query(QUERY_CUSTOM_RULES_MINIMAL)
+        except Exception:
+            return rules
+    else:
+        fields_str = "\n".join(field_lines)
         dynamic_query = f"""
         {{
           getCustomRules(first: 500) {{
             edges {{
               node {{
-                uuid
-                creatorId
-                createdTime
-                description
-                isDeleted
-                entities
-                ruleType
-                {sql_field}
-                scheduleConfig {{ intervalMinutes startTime }}
-                alertCondition {{ operator threshold }}
+{fields_str}
               }}
             }}
           }}
@@ -274,13 +316,27 @@ def _fetch_custom_rules(
         """
         try:
             result = client.query(dynamic_query)
-        except Exception:
-            result = client.query(QUERY_CUSTOM_RULES_MINIMAL)
-    else:
-        try:
-            result = client.query(QUERY_CUSTOM_RULES)
-        except Exception:
-            result = client.query(QUERY_CUSTOM_RULES_MINIMAL)
+        except Exception as e:
+            console.print(f"  [yellow]Dynamic query failed ({e}), trying minimal...[/yellow]")
+            # Fallback: minimal + just the SQL field
+            if sql_field:
+                fallback = f"""
+                {{
+                  getCustomRules(first: 500) {{
+                    edges {{
+                      node {{
+                        uuid description isDeleted entities ruleType {sql_field}
+                      }}
+                    }}
+                  }}
+                }}
+                """
+                try:
+                    result = client.query(fallback)
+                except Exception:
+                    result = client.query(QUERY_CUSTOM_RULES_MINIMAL)
+            else:
+                result = client.query(QUERY_CUSTOM_RULES_MINIMAL)
 
     edges = (
         result.get("data", {}).get("getCustomRules", {}).get("edges", [])
@@ -290,7 +346,7 @@ def _fetch_custom_rules(
         node = edge.get("node", {})
         if node.get("uuid") and not node.get("isDeleted"):
             # Normalize SQL field name
-            if sql_field and sql_field in node:
+            if sql_field and sql_field in node and node[sql_field]:
                 node["sql"] = node[sql_field]
             rules[node["uuid"]] = node
 
@@ -300,16 +356,41 @@ def _fetch_custom_rules(
 def _fetch_user_defined(
     client: MonteCarloClient, ud_info: dict[str, Any]
 ) -> dict[str, dict]:
-    """Fetch user-defined monitors, handling union vs concrete types."""
+    """Fetch user-defined monitors, building query from introspected fields."""
     ud: dict[str, dict] = {}
 
+    # Core fields we want, mapped to possible renames
+    # MC renamed description -> ruleDescription in some versions
+    field_candidates = {
+        "uuid": "uuid",
+        "entities": "entities",
+        "createdTime": "createdTime",
+        "creatorId": "creatorId",
+        "monitorType": "monitorType",
+    }
+    # Description field may have been renamed
+    desc_candidates = ["description", "ruleDescription"]
+    # Schedule field may have been removed
+    schedule_candidates = ["scheduleConfig"]
+
+    discovered = set(ud_info.get("fields") or [])
+
     if ud_info["kind"] == "UNION" and ud_info["possible_types"]:
+        # Union type -- need inline fragments
+        scalar_fields = []
+        for wanted, name in field_candidates.items():
+            if name in discovered:
+                scalar_fields.append(name)
+        for c in desc_candidates:
+            if c in discovered:
+                scalar_fields.append(c)
+                break
+
+        fields_str = " ".join(scalar_fields)
         fragments = ""
         for ptype in ud_info["possible_types"]:
             fragments += f"""
-                ... on {ptype} {{
-                  uuid description entities createdTime creatorId
-                }}
+                ... on {ptype} {{ {fields_str} }}
             """
         query = f"""
         {{
@@ -318,7 +399,35 @@ def _fetch_user_defined(
           }}
         }}
         """
+    elif discovered:
+        # Concrete type with known fields -- build from introspection
+        scalar_fields = []
+        for wanted, name in field_candidates.items():
+            if name in discovered:
+                scalar_fields.append(name)
+        for c in desc_candidates:
+            if c in discovered:
+                scalar_fields.append(c)
+                break
+        for c in schedule_candidates:
+            if c in discovered:
+                scalar_fields.append(f"{c} {{ intervalMinutes startTime }}")
+                break
+
+        fields_str = "\n                ".join(scalar_fields)
+        query = f"""
+        {{
+          getAllUserDefinedMonitorsV2(first: 500) {{
+            edges {{
+              node {{
+                {fields_str}
+              }}
+            }}
+          }}
+        }}
+        """
     else:
+        # No introspection data -- try hardcoded, expect it may fail
         query = QUERY_USER_DEFINED
 
     try:
@@ -331,6 +440,9 @@ def _fetch_user_defined(
         for edge in edges:
             node = edge.get("node", {})
             if node.get("uuid"):
+                # Normalize description field name
+                if "ruleDescription" in node and "description" not in node:
+                    node["description"] = node["ruleDescription"]
                 ud[node["uuid"]] = node
     except Exception as e:
         console.print(f"  [yellow]User-defined fetch failed: {e}[/yellow]")
