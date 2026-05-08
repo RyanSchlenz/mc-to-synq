@@ -131,7 +131,7 @@ def init(
             raise typer.Exit(0)
 
     # Copy the bundled example config
-    example = Path(__file__).parent.parent / "config" / "example.yaml"
+    example = Path(__file__).parent / "example.yaml"
     if example.exists():
         shutil.copy(example, output)
     else:

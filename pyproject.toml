@@ -21,6 +21,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Database",
+    "Topic :: Software Development :: Libraries",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
@@ -44,14 +45,15 @@ dev = [
 mc-to-synq = "mc_to_synq.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/ryanschlenz/mc-to-synq"
-Issues = "https://github.com/ryanschlenz/mc-to-synq/issues"
+Homepage = "https://github.com/RyanSchlenz/mc-to-synq"
+Repository = "https://github.com/RyanSchlenz/mc-to-synq"
+Issues = "https://github.com/RyanSchlenz/mc-to-synq/issues"
 
 [tool.setuptools.packages.find]
 include = ["mc_to_synq*"]
 
 [tool.setuptools.package-data]
-mc_to_synq = ["../config/*.yaml"]
+mc_to_synq = ["example.yaml"]
 
 [tool.ruff]
 line-length = 100

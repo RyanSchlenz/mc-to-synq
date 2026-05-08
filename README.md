@@ -16,17 +16,17 @@ mc-to-synq solves three problems that make MC-to-SYNQ migrations painful:
 
 ## Installation
 
-
+```
 pip install mc-to-synq
-
+```
 
 Or install from source:
 
-
-git clone https://github.com/ryanschlenz/mc-to-synq.git
+```
+git clone https://github.com/RyanSchlenz/mc-to-synq.git
 cd mc-to-synq
 pip install -e .
-
+```
 
 Requires Python 3.10+.
 
@@ -34,9 +34,9 @@ Requires Python 3.10+.
 
 ### 1. Generate a config file
 
-
+```
 mc-to-synq init
-
+```
 
 This creates `mc-to-synq.yaml` in your current directory with annotated defaults. Open it and fill in:
 
@@ -48,31 +48,31 @@ This creates `mc-to-synq.yaml` in your current directory with annotated defaults
 
 Monte Carlo credentials come from `~/.mcd/profiles.ini` (the standard MC CLI config) or environment variables:
 
-
+```
 export MC_API_ID="your_mc_id"
 export MC_API_TOKEN="your_mc_token"
-
+```
 
 SYNQ credentials are always environment variables:
 
-
+```
 export SYNQ_CLIENT_ID="your_client_id"
 export SYNQ_CLIENT_SECRET="your_client_secret"
-
+```
 
 Create SYNQ API credentials at: Settings > API > Add client. Required scopes: Edit SQL Tests, Edit Automatic Monitors, Edit Custom Monitors.
 
 ### 3. Test connections
 
-
+```
 mc-to-synq status
-
+```
 
 ### 4. Run the full migration
 
-
+```
 mc-to-synq migrate-all --dry-run
-
+```
 
 This extracts from MC, converts everything, generates payloads, and stops before deploying. Review the output files, then run without `--dry-run` to deploy.
 
@@ -122,7 +122,7 @@ All settings live in a single YAML file (`mc-to-synq.yaml`). Key sections:
 
 Controls which MC monitors are selected for migration. The entity prefix filter is the primary mechanism -- a monitor is included if any of its registered entities match a prefix. Text patterns are a fallback for monitors with missing entity metadata.
 
-yaml
+```yaml
 filters:
   entity_prefixes:
     - "mydb:analytics."
@@ -130,13 +130,13 @@ filters:
   text_patterns:
     - "analytics"
     - "bizviews"
-
+```
 
 ### OOTB monitor generation
 
 Timestamp column resolution uses a priority list -- the first match per entity wins. Business keys for duplicate detection are resolved from PK and unique constraints.
 
-yaml
+```yaml
 ootb:
   timestamp_columns:
     - "DSS_LOAD_DATE"
@@ -145,7 +145,7 @@ ootb:
     - "UPDATED_AT"
     - "CREATED_AT"
   monitor_prefix: "bv_"
-
+```
 
 The `monitor_prefix` is used for both naming and cleanup. All monitors created by mc-to-synq are named `bv_freshness_*`, `bv_volume_*`, `bv_duplicates_*`, making bulk teardown deterministic.
 
@@ -153,20 +153,20 @@ The `monitor_prefix` is used for both naming and cleanup. All monitors created b
 
 If your environment uses an SSL-intercepting proxy, disable certificate verification:
 
-yaml
+```yaml
 network:
   verify_ssl: false
-
+```
 
 If `api.synq.io` does not resolve on your DNS, use the alternative endpoint:
 
-yaml
+```yaml
 synq:
   base_url: "https://developer.synq.io"
   oauth_url: "https://developer.synq.io/oauth2/token"
+```
 
-
-See `config/example.yaml` for the full annotated reference.
+See `mc_to_synq/example.yaml` in the source repository for the full annotated reference, or run `mc-to-synq init` to copy it into your project.
 
 ## How it works
 
@@ -211,12 +211,13 @@ SQL tests use stable IDs derived from the MC rule name (prefixed with `mc_migrat
 
 ## Project structure
 
-
+```text
 mc-to-synq/
   pyproject.toml
   mc_to_synq/
     cli.py                    # Typer CLI entry point
     config.py                 # YAML config loader (Pydantic-validated)
+    example.yaml              # Annotated config reference (bundled with the package)
     auth/
       monte_carlo.py          # MC GraphQL client
       synq.py                 # SYNQ OAuth2 client
@@ -233,23 +234,21 @@ mc-to-synq/
       cleanup.py              # Prefix-based bulk delete
     reporting/
       __init__.py             # JSON report generation
-  config/
-    example.yaml              # Annotated config reference
   tests/
     test_config.py
     test_filters.py
     test_sql_tests.py
     test_classification.py
-
+```
 
 ## Development
 
-
-git clone https://github.com/ryanschlenz/mc-to-synq.git
+```
+git clone https://github.com/RyanSchlenz/mc-to-synq.git
 cd mc-to-synq
 pip install -e ".[dev]"
 pytest
-
+```
 
 ## License
 
