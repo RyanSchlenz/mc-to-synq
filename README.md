@@ -179,11 +179,15 @@ MC SQL monitors are converted to SYNQ SQL Tests using these rules:
 | `SELECT * ... WHERE <violation>` | Passed through as-is (0 rows = pass) |
 | `SELECT ... HAVING COUNT(*) > 1` | Passed through (HAVING already filters to violations) |
 | `SELECT ... WHERE NOT IN/EXISTS` | Passed through (already violation-oriented) |
-| `SELECT COUNT(*) FROM ...` | Wrapped in outer query that returns rows only when count != 0 |
-| CTE with WHERE on final SELECT | Passed through |
-| CTE without WHERE on final SELECT | Flagged for manual review |
+| `SELECT COUNT(*) FROM ...` | Wrapped in outer query that returns rows only when count != 0, including counts over HAVING or NOT EXISTS subqueries |
+| `source_count` / `target_count` / `difference` columns | Wrapped to return rows only on mismatch |
+| Other aggregate-only SELECT (for example `SELECT MAX(x) FROM ...`) | Flagged for manual review |
+| CTE with WHERE/HAVING on final SELECT | Passed through |
+| CTE whose final SELECT returns a COUNT, or has no WHERE | Flagged for manual review |
 | Jinja template variables (`{{ }}`) | Skipped (requires manual rewrite) |
 | Disabled in MC | Skipped |
+
+The outer SELECT is checked first: a query that returns a single COUNT always returns one row, so it is wrapped even if it contains HAVING or NOT EXISTS. MC alert thresholds are not carried over: a wrapped COUNT fails whenever the count is not 0. Flagged tests are still included in the payload, so review them before deploying.
 
 ### Monitor type mapping
 
@@ -200,7 +204,7 @@ MC SQL monitors are converted to SYNQ SQL Tests using these rules:
 
 ### Idempotent operations
 
-SQL tests use stable IDs derived from the MC rule name (prefixed with `mc_migrated_`). Re-running the deployment upserts rather than duplicates. OOTB monitors check for existing monitors by name before creating, so repeated runs skip already-deployed monitors.
+SQL tests use stable IDs derived from the MC rule name (prefixed with `mc_migrated_`). Re-running the deployment upserts rather than duplicates. MC does not enforce unique names, so when two monitors would get the same ID, both get their MC uuid appended. Monitors without a name use their uuid. OOTB monitors check for existing monitors by name before creating, so repeated runs skip already-deployed monitors.
 
 ## Known limitations
 
@@ -237,8 +241,12 @@ mc-to-synq/
   tests/
     test_config.py
     test_filters.py
-    test_sql_tests.py
+    test_sql_tests.py         # includes SQLite execution of generated SQL
     test_classification.py
+    test_extract.py           # introspection, fallbacks, three-source merge
+    test_yaml_export.py
+    test_cli.py               # end-to-end CLI against fake MC/SYNQ APIs
+    fake_apis.py
 ```
 
 ## Development

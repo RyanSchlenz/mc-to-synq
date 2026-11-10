@@ -47,6 +47,9 @@ app = typer.Typer(
     help="Migrate monitors from Monte Carlo to SYNQ (Coalesce Quality).",
     no_args_is_help=True,
     rich_markup_mode="rich",
+    # Never print local variables in tracebacks: they include API tokens
+    # and OAuth client secrets from the request headers and payloads.
+    pretty_exceptions_show_locals=False,
 )
 
 migrate_app = typer.Typer(
@@ -396,7 +399,7 @@ def migrate_ootb(
         console.print(f"\n  Payload: [cyan]{payload_file}[/cyan]")
 
     generate_ootb_report(
-        len(entities) + len(skipped),
+        len(entities),
         len(entities) - len(skipped),
         definitions,
         skipped,
@@ -518,10 +521,15 @@ def deploy_sql_tests_cmd(
     if result["errors"]:
         console.print(f"  Errors:  [red]{len(result['errors'])}[/red]")
 
-    # Save report
+    # Save deploy report separately so the conversion report is preserved
     from mc_to_synq.reporting import generate_sql_test_report
-    generate_sql_test_report(tests, [], result, cfg.output.directory)
+    generate_sql_test_report(
+        tests, [], result, cfg.output.directory,
+        filename="sql_test_deploy_report.json",
+    )
     console.print()
+    if result["errors"]:
+        raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -578,6 +586,8 @@ def deploy_ootb_cmd(
         console.print(f"  Errors:  [red]{len(result['errors'])}[/red]")
 
     console.print()
+    if result["errors"]:
+        raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -626,6 +636,8 @@ def cleanup_sql_tests_cmd(
     if errors:
         console.print(f"  Errors: {len(errors)}")
     console.print()
+    if errors:
+        raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -677,6 +689,8 @@ def cleanup_monitors_cmd(
     if errors:
         console.print(f"  Errors: {len(errors)}")
     console.print()
+    if errors:
+        raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -724,7 +738,8 @@ def migrate_all(
     from mc_to_synq.migrate.sql_tests import convert_monitors_to_sql_tests
 
     sql_tests, sql_meta = convert_monitors_to_sql_tests(matched, cfg)
-    console.print(f"  Converted: {len(sql_tests)}")
+    review = sum(1 for m in sql_meta if m.get("manual_review") and not m.get("skipped"))
+    console.print(f"  Converted: {len(sql_tests)}, Manual review: {review}")
 
     payload_file = _export_path(cfg, "sql_tests_payload.json")
     with open(payload_file, "w") as f:
@@ -768,6 +783,7 @@ def migrate_all(
     from mc_to_synq.deploy.custom_monitors import deploy_monitors
     from mc_to_synq.deploy.sql_tests import deploy_sql_tests
 
+    error_count = 0
     if sql_tests:
         console.print(f"\n  Deploying {len(sql_tests)} SQL Tests...")
         st_result = deploy_sql_tests(synq, sql_tests, cfg)
@@ -776,6 +792,7 @@ def migrate_all(
             f"Updated: {len(st_result['updated'])}, "
             f"Errors: {len(st_result['errors'])}"
         )
+        error_count += len(st_result["errors"])
 
     if definitions:
         console.print(f"\n  Deploying {len(definitions)} OOTB monitors...")
@@ -784,7 +801,13 @@ def migrate_all(
             f"    Created: {len(ootb_result['created_ids'])}, "
             f"Errors: {len(ootb_result['errors'])}"
         )
+        error_count += len(ootb_result["errors"])
 
+    if error_count:
+        console.print(
+            f"\n[bold red]Migration finished with {error_count} error(s).[/bold red]\n"
+        )
+        raise typer.Exit(1)
     console.print("\n[bold green]Migration complete.[/bold green]\n")
 
 

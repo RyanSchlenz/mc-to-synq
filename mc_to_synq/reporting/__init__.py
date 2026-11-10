@@ -49,6 +49,7 @@ def generate_sql_test_report(
     metadata: list[dict],
     deploy_result: dict[str, Any] | None,
     output_dir: str,
+    filename: str = "sql_test_migration_report.json",
 ) -> str:
     """Generate a report on SQL test migration and deployment."""
     skipped = [m for m in metadata if m.get("skipped")]
@@ -79,7 +80,7 @@ def generate_sql_test_report(
             "error_detail": deploy_result.get("errors", []),
         }
 
-    filepath = str(Path(output_dir) / "sql_test_migration_report.json")
+    filepath = str(Path(output_dir) / filename)
     _write_json(report, filepath)
     return filepath
 

@@ -60,7 +60,7 @@ def _collect_entities(monitor: dict) -> set[str]:
     for e in monitor.get("entities") or []:
         entities.add(str(e).lower())
     for key in ("_user_defined", "_custom_rule"):
-        detail = monitor.get(key, {})
+        detail = monitor.get(key) or {}
         for e in detail.get("entities") or []:
             entities.add(str(e).lower())
     return entities
