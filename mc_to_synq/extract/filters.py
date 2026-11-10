@@ -1,7 +1,7 @@
 """Config-driven monitor filtering.
 
-Replaces the hardcoded BIZVIEW_PATTERNS and BIZVIEW_ENTITY_PREFIXES
-with a pluggable filter system driven by the config file.
+Selects which Monte Carlo monitors to migrate using entity prefixes
+and text patterns from the config file.
 """
 
 from __future__ import annotations

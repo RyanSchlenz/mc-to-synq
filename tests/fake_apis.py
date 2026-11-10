@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse
 MC_ID, MC_TOKEN = "fake-mc-id", "fake-mc-token"
 SYNQ_ID, SYNQ_SECRET, SYNQ_TOKEN = "fake-client", "fake-secret", "fake-access-token"
 
-E = "piqdw:bizviews."
+E = "analytics_db:marts."
 
 GET_MONITORS = [
     {"uuid": "m-where", "name": "orders_null_dates", "monitorType": "CUSTOM_SQL",
@@ -30,18 +30,18 @@ GET_MONITORS = [
 ]
 
 CUSTOM_RULES = [
-    ("m-where", None, "SELECT * FROM piqdw.bizviews.orders WHERE order_date IS NULL;", "orders",
+    ("m-where", None, "SELECT * FROM analytics_db.marts.orders WHERE order_date IS NULL;", "orders",
      {"intervalMinutes": 60}),
-    ("m-count", None, "SELECT COUNT(*) FROM piqdw.bizviews.orders WHERE total < 0", "orders", None),
-    ("m-disabled", None, "SELECT * FROM piqdw.bizviews.orders WHERE 1=0", "orders", None),
-    ("m-other", None, "SELECT * FROM piqdw.staging.raw WHERE x IS NULL", None, None),
+    ("m-count", None, "SELECT COUNT(*) FROM analytics_db.marts.orders WHERE total < 0", "orders", None),
+    ("m-disabled", None, "SELECT * FROM analytics_db.marts.orders WHERE 1=0", "orders", None),
+    ("m-other", None, "SELECT * FROM analytics_db.staging.raw WHERE x IS NULL", None, None),
     ("cr-jinja", "Templated", "SELECT * FROM {{ ref('o') }} WHERE x IS NULL", "orders", None),
-    ("cr-noname-1", None, "SELECT * FROM piqdw.bizviews.payments WHERE a IS NULL", "payments",
+    ("cr-noname-1", None, "SELECT * FROM analytics_db.marts.payments WHERE a IS NULL", "payments",
      None),
-    ("cr-noname-2", None, "SELECT * FROM piqdw.bizviews.refunds WHERE a < 0", "refunds", None),
-    ("cr-dup-a", "Null amount", "SELECT * FROM piqdw.bizviews.invoices WHERE a IS NULL", "invoices",
+    ("cr-noname-2", None, "SELECT * FROM analytics_db.marts.refunds WHERE a < 0", "refunds", None),
+    ("cr-dup-a", "Null amount", "SELECT * FROM analytics_db.marts.invoices WHERE a IS NULL", "invoices",
      None),
-    ("cr-dup-b", "Null amount", "SELECT * FROM piqdw.bizviews.credits WHERE a IS NULL", "credits",
+    ("cr-dup-b", "Null amount", "SELECT * FROM analytics_db.marts.credits WHERE a IS NULL", "credits",
      None),
 ]
 
@@ -141,7 +141,7 @@ class FakeApis:
                 return {"errors": [{"message": "Cannot query field"}], "data": None}
             edges = []
             for uuid, desc, sql, table, sched in CUSTOM_RULES:
-                ent = [E + table] if table else ["piqdw:staging.raw"]
+                ent = [E + table] if table else ["analytics_db:staging.raw"]
                 edges.append({"node": {"uuid": uuid, "description": desc, "isDeleted": False,
                                        "entities": ent, "ruleType": "CUSTOM_SQL",
                                        "queryText": sql, "scheduleConfig": sched}})
@@ -159,10 +159,10 @@ class FakeApis:
     def synq(self, method, path, qs, body):
         if path == "/api/entities/v1/search":
             page = int(qs.get("page", ["0"])[0])
-            hits = [{"entityType": t, "name": n, "synqPath": f"sf::acct::PIQDW::BIZVIEWS::{n}"}
+            hits = [{"entityType": t, "name": n, "synqPath": f"sf::acct::ANALYTICS_DB::MARTS::{n}"}
                     for n, (t, _, _) in SYNQ_TABLES.items()]
             hits.append({"entityType": "ENTITY_TYPE_SNOWFLAKE_TABLE", "name": "RAW",
-                         "synqPath": "sf::acct::PIQDW::STAGING::RAW"})
+                         "synqPath": "sf::acct::ANALYTICS_DB::STAGING::RAW"})
             pages = [hits[:3], hits[3:]]
             return 200, {"hits": pages[page] if page < len(pages) else []}
         if path in ("/api/schema/v1", "/api/constraints/v1/table-constraints"):

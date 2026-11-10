@@ -34,8 +34,8 @@ def workdir(tmp_path, monkeypatch, fake):
     cfg["monte_carlo"]["api_url"] = f"{fake.url}/graphql"
     cfg["synq"].update(base_url=fake.url, oauth_url=f"{fake.url}/oauth2/token",
                        integration_id="11111111-2222-3333-4444-555555555555")
-    cfg["snowflake"].update(account="acct", database="PIQDW", schema="BIZVIEWS")
-    cfg["filters"] = {"entity_prefixes": ["piqdw:bizviews."], "text_patterns": ["bizviews"]}
+    cfg["snowflake"].update(account="acct", database="ANALYTICS_DB", schema="MARTS")
+    cfg["filters"] = {"entity_prefixes": ["analytics_db:marts."], "text_patterns": ["marts"]}
     cfg["output"]["directory"] = "out"
     (tmp_path / "mc-to-synq.yaml").write_text(yaml.safe_dump(cfg))
     return tmp_path
@@ -106,9 +106,9 @@ def test_full_step_by_step_flow(workdir, fake):
     assert r.exit_code == 0, r.output
     defs = json.loads((out / "ootb_monitors_payload.json").read_text())["monitors"]
     names = {d["name"] for d in defs}
-    assert "bv_freshness_v_summary" in names
-    assert "bv_duplicates_v_customer" in names
-    assert "bv_duplicates_orders" in names
+    assert "mc2synq_freshness_v_summary" in names
+    assert "mc2synq_duplicates_v_customer" in names
+    assert "mc2synq_duplicates_orders" in names
     assert not any("v_no_ts" in n or "raw" in n for n in names)
     ootb_report = json.loads((out / "ootb_monitor_report.json").read_text())
     assert ootb_report["entities"] == {"discovered": 4, "eligible": 3, "skipped": 1}

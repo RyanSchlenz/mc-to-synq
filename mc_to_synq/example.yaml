@@ -48,7 +48,7 @@ snowflake:
 filters:
   # Entity prefix patterns (case-insensitive).
   # MC entity format: "database:schema.table_name"
-  # Example: to migrate everything in the BIZVIEWS schema:
+  # Example: to migrate everything in the MARTS schema:
   entity_prefixes:
     - "your_database:your_schema."
 
@@ -83,7 +83,7 @@ ootb:
     - "ENTITY_TYPE_SNOWFLAKE_DYNAMIC_TABLE"
 
   # Monitor naming prefix (also used for bulk cleanup).
-  monitor_prefix: "bv_"
+  monitor_prefix: "mc2synq_"
 
   # Default severity and sensitivity.
   severity: "SEVERITY_WARNING"

@@ -126,10 +126,10 @@ Controls which MC monitors are selected for migration. The entity prefix filter 
 filters:
   entity_prefixes:
     - "mydb:analytics."
-    - "mydb:bizviews."
+    - "mydb:marts."
   text_patterns:
     - "analytics"
-    - "bizviews"
+    - "marts"
 ```
 
 ### OOTB monitor generation
@@ -144,10 +144,12 @@ ootb:
     - "MODIFIED_AT"
     - "UPDATED_AT"
     - "CREATED_AT"
-  monitor_prefix: "bv_"
+  monitor_prefix: "mc2synq_"
 ```
 
-The `monitor_prefix` is used for both naming and cleanup. All monitors created by mc-to-synq are named `bv_freshness_*`, `bv_volume_*`, `bv_duplicates_*`, making bulk teardown deterministic.
+The `monitor_prefix` is used for both naming and cleanup. All monitors created by mc-to-synq are named `mc2synq_freshness_*`, `mc2synq_volume_*`, `mc2synq_duplicates_*`, making bulk teardown deterministic.
+
+Version 0.1.0 used `bv_` as the default prefix. If you deployed monitors with 0.1.0, set `monitor_prefix: "bv_"` in your config so `cleanup monitors` and the existing-monitor check still find them.
 
 ### Network
 

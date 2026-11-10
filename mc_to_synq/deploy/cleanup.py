@@ -1,7 +1,7 @@
 """Prefix-based bulk cleanup for migrated SYNQ resources.
 
 Provides deterministic teardown of SQL tests (mc_migrated_ prefix)
-and custom monitors (bv_ prefix) created by the migration tool.
+and custom monitors (mc2synq_ prefix) created by the migration tool.
 """
 
 from __future__ import annotations

@@ -56,7 +56,7 @@ class OotbConfig(BaseModel):
         "ENTITY_TYPE_SNOWFLAKE_VIEW",
         "ENTITY_TYPE_SNOWFLAKE_DYNAMIC_TABLE",
     ]
-    monitor_prefix: str = "bv_"
+    monitor_prefix: str = "mc2synq_"
     severity: str = "SEVERITY_WARNING"
     sensitivity: str = "SENSITIVITY_BALANCED"
     schedule_minutes_utc: int = 360

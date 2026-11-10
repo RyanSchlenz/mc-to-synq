@@ -7,7 +7,7 @@ from mc_to_synq.migrate.yaml_export import classify_monitor, generate_yaml_expor
 
 
 def _cfg():
-    return AppConfig(snowflake={"schema": "BIZVIEWS"})
+    return AppConfig(snowflake={"schema": "MARTS"})
 
 
 def test_null_schedule_config_does_not_crash(tmp_path):
@@ -22,7 +22,7 @@ def test_null_schedule_config_does_not_crash(tmp_path):
     assert [m["schedule"] for m in data["monitors"]] == [{"daily": 0}] * 3
     out = tmp_path / "x.yml"
     write_yaml(data, str(out))
-    assert yaml.safe_load(out.read_text())["namespace"] == "bizviews-monitors"
+    assert yaml.safe_load(out.read_text())["namespace"] == "marts-monitors"
 
 
 def test_schedule_mapping():

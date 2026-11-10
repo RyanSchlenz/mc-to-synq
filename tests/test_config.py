@@ -67,4 +67,4 @@ def test_ootb_defaults():
     """OOTB defaults include standard timestamp columns."""
     cfg = AppConfig()
     assert "DSS_LOAD_DATE" in cfg.ootb.timestamp_columns
-    assert cfg.ootb.monitor_prefix == "bv_"
+    assert cfg.ootb.monitor_prefix == "mc2synq_"
