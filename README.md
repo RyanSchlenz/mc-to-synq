@@ -2,7 +2,7 @@
 
 Migrate your data observability monitors from [Monte Carlo](https://getmontecarlo.com) to [SYNQ](https://synq.io) (Coalesce Quality) with a single CLI.
 
-Built from a production migration of 200+ monitors across a Snowflake data platform. Handles the full lifecycle: extract monitors from MC's GraphQL API, convert them to SYNQ-compatible formats, deploy via SYNQ's REST API, and clean up when you need to start over.
+Built during a proof of concept that migrated a real Monte Carlo account's monitors to SYNQ on a Snowflake data platform. Handles the full lifecycle: extract monitors from MC's GraphQL API, convert them to SYNQ-compatible formats, deploy via SYNQ's REST API, and clean up when you need to start over.
 
 ## What it does
 
