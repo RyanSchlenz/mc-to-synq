@@ -139,7 +139,7 @@ def _extract_table_refs(monitor: dict) -> list[str]:
     tables.update(re.findall(fq_pattern, sql, re.IGNORECASE))
 
     for key in ("_user_defined", "_custom_rule"):
-        for e in monitor.get(key, {}).get("entities", []) or []:
+        for e in (monitor.get(key) or {}).get("entities") or []:
             tables.add(str(e))
 
     return list(tables)
@@ -151,8 +151,8 @@ def _extract_table_refs(monitor: dict) -> list[str]:
 
 def _map_schedule(monitor: dict) -> dict:
     """Map MC schedule to SYNQ schedule format."""
-    custom_rule = monitor.get("_custom_rule", {})
-    interval = custom_rule.get("scheduleConfig", {}).get("intervalMinutes")
+    custom_rule = monitor.get("_custom_rule") or {}
+    interval = (custom_rule.get("scheduleConfig") or {}).get("intervalMinutes")
 
     if interval:
         if interval <= 60:

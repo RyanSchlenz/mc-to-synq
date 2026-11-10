@@ -17,6 +17,16 @@ from mc_to_synq.auth.monte_carlo import MonteCarloClient
 console = Console()
 
 
+def _data(result: dict[str, Any] | None) -> dict[str, Any]:
+    """Return the GraphQL 'data' object, treating null/missing as empty."""
+    return (result or {}).get("data") or {}
+
+
+def _edges(result: dict[str, Any] | None, root: str) -> list[dict[str, Any]]:
+    """Return connection edges for a root field, or [] if it is null/missing."""
+    return (_data(result).get(root) or {}).get("edges") or []
+
+
 # ---------------------------------------------------------------------------
 # GraphQL queries
 # ---------------------------------------------------------------------------
@@ -144,8 +154,12 @@ def _discover_custom_rule_fields(client: MonteCarloClient) -> dict[str, Any]:
     Returns dict with sql_field name and full field list, so we can
     build queries using only fields that actually exist.
     """
-    result = client.query(INTROSPECT_CUSTOM_RULE)
-    type_info = result.get("data", {}).get("__type")
+    try:
+        result = client.query(INTROSPECT_CUSTOM_RULE)
+    except Exception as e:
+        console.print(f"  [yellow]CustomRule introspection failed: {e}[/yellow]")
+        return {"sql_field": None, "fields": []}
+    type_info = _data(result).get("__type")
     if not type_info:
         return {"sql_field": None, "fields": []}
 
@@ -162,8 +176,12 @@ def _discover_custom_rule_fields(client: MonteCarloClient) -> dict[str, Any]:
 
 def _discover_ud_type(client: MonteCarloClient) -> dict[str, Any]:
     """Discover the shape of UserDefinedMonitorV2 (union vs concrete)."""
-    result = client.query(INTROSPECT_USER_DEFINED_V2)
-    type_info = result.get("data", {}).get("__type", {})
+    try:
+        result = client.query(INTROSPECT_USER_DEFINED_V2)
+    except Exception as e:
+        console.print(f"  [yellow]UserDefinedMonitorV2 introspection failed: {e}[/yellow]")
+        result = {}
+    type_info = _data(result).get("__type") or {}
     return {
         "kind": type_info.get("kind"),
         "fields": [f["name"] for f in (type_info.get("fields") or [])],
@@ -211,7 +229,7 @@ def extract_monitors(client: MonteCarloClient) -> tuple[list[dict], dict]:
     console.print("\n  Fetching getMonitors...")
     try:
         result = client.query(QUERY_ALL_MONITORS)
-        raw = result.get("data", {}).get("getMonitors", []) or []
+        raw = _data(result).get("getMonitors") or []
         for m in raw:
             if m.get("uuid"):
                 monitors_by_uuid[m["uuid"]] = m
@@ -294,16 +312,10 @@ def _fetch_custom_rules(
         if f in known_fields:
             field_lines.append(f"                {f} {sub}")
 
-    if not field_lines:
-        # Introspection returned nothing useful -- use hardcoded minimal
-        console.print("  [yellow]No introspected fields, using minimal query[/yellow]")
-        try:
-            result = client.query(QUERY_CUSTOM_RULES_MINIMAL)
-        except Exception:
-            return rules
-    else:
+    queries: list[tuple[str, str]] = []
+    if field_lines:
         fields_str = "\n".join(field_lines)
-        dynamic_query = f"""
+        queries.append(("dynamic", f"""
         {{
           getCustomRules(first: 500) {{
             edges {{
@@ -313,37 +325,39 @@ def _fetch_custom_rules(
             }}
           }}
         }}
-        """
-        try:
-            result = client.query(dynamic_query)
-        except Exception as e:
-            console.print(f"  [yellow]Dynamic query failed ({e}), trying minimal...[/yellow]")
-            # Fallback: minimal + just the SQL field
-            if sql_field:
-                fallback = f"""
-                {{
-                  getCustomRules(first: 500) {{
-                    edges {{
-                      node {{
-                        uuid description isDeleted entities ruleType {sql_field}
-                      }}
-                    }}
-                  }}
-                }}
-                """
-                try:
-                    result = client.query(fallback)
-                except Exception:
-                    result = client.query(QUERY_CUSTOM_RULES_MINIMAL)
-            else:
-                result = client.query(QUERY_CUSTOM_RULES_MINIMAL)
+        """))
+    else:
+        console.print("  [yellow]No introspected fields, using minimal query[/yellow]")
+    if sql_field:
+        queries.append(("minimal + SQL field", f"""
+        {{
+          getCustomRules(first: 500) {{
+            edges {{
+              node {{
+                uuid description isDeleted entities ruleType {sql_field}
+              }}
+            }}
+          }}
+        }}
+        """))
+    queries.append(("minimal", QUERY_CUSTOM_RULES_MINIMAL))
 
-    edges = (
-        result.get("data", {}).get("getCustomRules", {}).get("edges", [])
-    )
+    # GraphQL reports unknown fields as HTTP 200 with errors and null data,
+    # so treat a missing getCustomRules as a failure and fall back.
+    edges: list[dict[str, Any]] = []
+    for label, q in queries:
+        try:
+            result = client.query(q)
+        except Exception as e:
+            console.print(f"  [yellow]{label} query failed ({e})[/yellow]")
+            continue
+        if _data(result).get("getCustomRules") is not None:
+            edges = _edges(result, "getCustomRules")
+            break
+        console.print(f"  [yellow]{label} query returned no data, trying fallback...[/yellow]")
 
     for edge in edges:
-        node = edge.get("node", {})
+        node = edge.get("node") or {}
         if node.get("uuid") and not node.get("isDeleted"):
             # Normalize SQL field name
             if sql_field and sql_field in node and node[sql_field]:
@@ -432,13 +446,9 @@ def _fetch_user_defined(
 
     try:
         result = client.query(query)
-        edges = (
-            result.get("data", {})
-            .get("getAllUserDefinedMonitorsV2", {})
-            .get("edges", [])
-        )
+        edges = _edges(result, "getAllUserDefinedMonitorsV2")
         for edge in edges:
-            node = edge.get("node", {})
+            node = edge.get("node") or {}
             if node.get("uuid"):
                 # Normalize description field name
                 if "ruleDescription" in node and "description" not in node:
@@ -456,11 +466,9 @@ def _fetch_connections(client: MonteCarloClient) -> dict[str, dict]:
     try:
         result = client.query(QUERY_CONNECTIONS)
         conns = (
-            result.get("data", {})
-            .get("getUser", {})
-            .get("account", {})
-            .get("connections", [])
-        )
+            (_data(result).get("getUser") or {})
+            .get("account") or {}
+        ).get("connections") or []
         for conn in conns:
             connections[conn["uuid"]] = conn
     except Exception as e:
@@ -486,11 +494,11 @@ def _merge_custom_rules(
         else:
             monitors[uuid] = {
                 "uuid": uuid,
-                "name": rule.get("description", f"custom_rule_{uuid[:8]}"),
-                "description": rule.get("description", ""),
+                "name": rule.get("description") or f"custom_rule_{uuid[:8]}",
+                "description": rule.get("description") or "",
                 "monitorType": rule.get("ruleType", "CUSTOM_SQL"),
-                "sql": rule.get("sql", ""),
-                "entities": rule.get("entities", []),
+                "sql": rule.get("sql") or "",
+                "entities": rule.get("entities") or [],
                 "creatorId": rule.get("creatorId"),
                 "createdTime": rule.get("createdTime"),
                 "_custom_rule": rule,
@@ -511,10 +519,10 @@ def _merge_user_defined(
         else:
             monitors[uuid] = {
                 "uuid": uuid,
-                "name": ud.get("description", f"user_defined_{uuid[:8]}"),
-                "description": ud.get("description", ""),
-                "monitorType": ud.get("monitorType", ""),
-                "entities": ud.get("entities", []),
+                "name": ud.get("description") or f"user_defined_{uuid[:8]}",
+                "description": ud.get("description") or "",
+                "monitorType": ud.get("monitorType") or "",
+                "entities": ud.get("entities") or [],
                 "creatorId": ud.get("creatorId"),
                 "createdTime": ud.get("createdTime"),
                 "_user_defined": ud,
